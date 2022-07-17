@@ -54,6 +54,7 @@ void setup()
 {
   lora.setKeys(NwkSkey, AppSkey, DevAddr);
   rfm.init();
+  rfm.RFM_Set_Datarate(SF10BW125);
 }
 
 void loop()
