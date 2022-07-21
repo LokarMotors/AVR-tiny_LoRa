@@ -2,12 +2,10 @@
 #include <avr/sleep.h>
 #include <avr/wdt.h>
 #include <avr/io.h>
-//#include <avr/interrupt.h>
 #include <LoRaWAN.h>
 #include <CAY_DIY.h>
 #include <Adafruit_BMP085.h>
 #include "config.h"
-//#include <BMP180.h>
 
 #define BUFF_LEN 100
 
@@ -15,7 +13,7 @@
 #define DIO0 9
 #define NSS 11
 
-#define SLEEP_TIME 190 // ~9.5s per cycle 190 ----> 30min
+#define SLEEP_TIME 180 // ~10s per cycle 180 ----> 30min
 
 // SOIL MOISTURE pins
 #define V_CLK 7 // CLOCK pin
@@ -38,7 +36,7 @@ LoRaWAN lora = LoRaWAN(rfm);
 uint16_t Frame_Counter_Tx = 0x0000;
 
 // Global Variable to Track Deep Sleep
-volatile uint16_t sleep_count = SLEEP_TIME;
+volatile uint16_t sleep_count = SLEEP_TIME; // Send first message at power on
 
 // Custom CAYENNE library
 CAYDIY cayenne(3);
@@ -61,20 +59,20 @@ void loop()
 {
   if (sleep_count >= SLEEP_TIME)
   {
-    ADCSRA |= (1 << ADEN);
+    ADCSRA |= (1 << ADEN); // Enable ADC
     pinMode(V_CLK, OUTPUT);
-    digitalWrite(V_CLK, LOW); // discharging soil moisture capacitor
+    digitalWrite(V_CLK, LOW); // Discharging soil moisture capacitor
     if (sensor.begin(BMP085_ULTRALOWPOWER))
     {
       cayenne.Index = 0;
       cayenne.Add(0x01, 0x73, sensor.readPressure() / 10);
-
+      // Saving space instead of calling sensor.readTemperature();
       int32_t X1 = (sensor.readRawTemperature() - (int32_t)sensor.ac6) * (int32_t)sensor.ac5 >> 15;
       int32_t X2 = ((int32_t)sensor.mc << 11) / (X1 + (int32_t)sensor.md);
+      ///////////////////////////////////
       cayenne.Add(0x02, 0x67, (((X1 + X2 + 8) >> 4)));
       cayenne.Add(0x03, 0x02, map(GetMoisture(), MOIST_D, MOIST_W, 0, 10000));
     }
-
     lora.Send_Data(cayenne.Buffer, cayenne.Index, ++Frame_Counter_Tx);
     sleep_count = 0;
   }
@@ -110,25 +108,26 @@ int16_t GetMoisture()
 
   for (uint8_t i = 0; i < 255; i++)
   {
+    ADCSRA |= (1 << ADSC); // first few measurements are not reliable
     delayMicroseconds(1);
     digitalWrite(V_CLK, HIGH);
     delayMicroseconds(1);
     digitalWrite(V_CLK, LOW);
   }
-  ADCSRA |= (1 << ADSC); // start conversion
-  while (!(ADCSRA & 1 << ADIF))
+  ADCSRA |= (1 << ADSC);        // start conversion
+  while (!(ADCSRA & 1 << ADIF)) // wait for conversion to finish
     ;
   int16_t out = (int16_t)ADCH;
 
   // compensation for battery discharge
   digitalWrite(V_CLK, HIGH);
   delay(15);
-  ADCSRA |= (1 << ADSC);
-  while (!(ADCSRA & 1 << ADIF))
+  ADCSRA |= (1 << ADSC);        // measure high voltage
+  while (!(ADCSRA & 1 << ADIF)) // wait for conversion to finish
     ;
-  out += (int16_t)(MAX_3V3 - ADCH);
+  out += (int16_t)(MAX_3V3 - ADCH); // compensate battery discharge
   digitalWrite(V_CLK, LOW);
-  /////////////////////////////////////
+  ///////////////////////////////////
 
   return out;
 }
