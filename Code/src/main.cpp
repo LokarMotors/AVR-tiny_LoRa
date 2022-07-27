@@ -7,8 +7,6 @@
 #include <Adafruit_BMP085.h>
 #include "config.h"
 
-#define BUFF_LEN 100
-
 // RFM95 pins
 #define DIO0 9
 #define NSS 11
